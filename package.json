@@ -1,0 +1,44 @@
+{
+  "name": "envguard",
+  "version": "1.0.0",
+  "description": "Runtime .env contract enforcer. Define typed, validated contracts for your environment variables. Zero dependencies.",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "scripts": {
+    "test": "node test/index.test.js",
+    "example": "node -e \"const {example}=require('.'); example({DATABASE_URL:{type:'url',description:'PostgreSQL connection URL'},PORT:{type:'port',default:'3000'},NODE_ENV:{type:'enum',values:['development','production'],default:'development'},JWT_SECRET:{type:'string',required:true,minLength:32,description:'Secret key for JWT signing'}})\""
+  },
+  "keywords": [
+    "env",
+    "environment",
+    "variables",
+    "validation",
+    "dotenv",
+    "config",
+    "contract",
+    "typed",
+    "runtime",
+    "schema",
+    "validate",
+    "envalid",
+    "zero-dependencies"
+  ],
+  "author": "AXIOM <axiom@yonderzenith.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yonderzenith/envguard.git"
+  },
+  "homepage": "https://github.com/yonderzenith/envguard#readme",
+  "bugs": {
+    "url": "https://github.com/yonderzenith/envguard/issues"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ]
+}

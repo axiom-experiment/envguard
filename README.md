@@ -1,0 +1,284 @@
+# envguard
+
+**Runtime .env Contract Enforcer** — Define typed, validated contracts for your environment variables. Zero dependencies.
+
+[![npm version](https://badge.fury.io/js/envguard.svg)](https://www.npmjs.com/package/envguard)
+[![npm downloads](https://img.shields.io/npm/dw/envguard)](https://www.npmjs.com/package/envguard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+Stop writing this in every project:
+
+```js
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is required');
+}
+const port = parseInt(process.env.PORT || '3000', 10);
+if (isNaN(port)) throw new Error('PORT must be a number');
+```
+
+Start writing this instead:
+
+```js
+const config = guard({
+  DATABASE_URL: { type: 'url',  required: true },
+  PORT:         { type: 'port', default: '3000' },
+  NODE_ENV:     { type: 'enum', values: ['development', 'production'] },
+  DEBUG:        { type: 'boolean', default: 'false' },
+});
+
+// Fully typed, validated values — not raw strings
+config.PORT     // number (not "3000")
+config.DEBUG    // boolean (not "false")
+```
+
+When something is wrong, you get a clear, actionable error:
+
+```
+  envguard: Contract Violation
+  ─────────────────────────────────────────────
+  ✗  DATABASE_URL  missing (required)
+  ✗  PORT         "99999" exceeds maximum (65535)
+  ✓  NODE_ENV
+  ✓  DEBUG
+  ─────────────────────────────────────────────
+  Tip: run `node -e "require('envguard').example(contract)"` to generate .env.example
+```
+
+---
+
+## Install
+
+```bash
+npm install envguard
+```
+
+---
+
+## API
+
+### `guard(contract, [options])` → frozen config object
+
+Validates all vars in `contract` against `process.env`. Returns a **frozen**, **typed** config object.
+
+- If validation fails: prints a human-readable error report and exits with code 1 (configurable).
+- If validation passes: returns an immutable config object with coerced types.
+
+```js
+const { guard } = require('envguard');
+
+const config = guard({
+  // Required string
+  APP_NAME: { type: 'string', required: true },
+
+  // Port with default
+  PORT: { type: 'port', default: '3000' },
+
+  // Boolean flag
+  DEBUG: { type: 'boolean', default: 'false' },
+
+  // URL validation
+  API_BASE: { type: 'url', required: true },
+
+  // Enum (one of allowed values)
+  LOG_LEVEL: { type: 'enum', values: ['debug', 'info', 'warn', 'error'], default: 'info' },
+
+  // Number with range
+  TIMEOUT_MS: { type: 'number', default: '5000', min: 1000, max: 30000 },
+
+  // Optional with custom validator
+  API_KEY: {
+    type: 'string',
+    required: false,
+    minLength: 32,
+    validate: (v) => v.startsWith('sk-') ? null : 'must start with sk-',
+  },
+});
+
+// All values are typed and validated:
+config.PORT      // number
+config.DEBUG     // boolean
+config.TIMEOUT_MS // number
+```
+
+**Options:**
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `env` | `object` | `process.env` | Custom env source |
+| `color` | `boolean` | `true` | Enable colored output |
+| `exitOnFail` | `boolean` | `true` | Call `process.exit(1)` on failure, otherwise throw |
+
+---
+
+### `check(contract, [options])` → `{ valid, errors, config }`
+
+Like `guard()`, but **never throws or exits**. Use for conditional logic or pre-flight checks.
+
+```js
+const { check } = require('envguard');
+
+const { valid, errors, config } = check({
+  DATABASE_URL: { type: 'url', required: true },
+  PORT: { type: 'port', default: '3000' },
+});
+
+if (!valid) {
+  errors.forEach(e => console.warn(`${e.key}: ${e.error}`));
+  // handle gracefully
+}
+```
+
+---
+
+### `audit(contract, [options])` → `{ passed, failed, missing }`
+
+Prints a status table of all env vars in the contract. **Does not crash.** Use during startup or in debug scripts to see the state of your environment.
+
+```js
+const { audit } = require('envguard');
+
+audit({
+  DATABASE_URL: { type: 'url',  required: true },
+  PORT:         { type: 'port', default: '3000' },
+  API_KEY:      { type: 'string', required: false },
+});
+```
+
+Output:
+```
+  envguard: Environment Audit
+  ─────────────────────────────────────────────
+  MISSING   DATABASE_URL (url)
+  OK        PORT = (default: 3000)
+  UNSET     API_KEY (string)
+  ─────────────────────────────────────────────
+  1 passed  2 issues
+```
+
+---
+
+### `example(contract)` → string
+
+Generates `.env.example` content from your contract. Writes to stdout. Perfect for keeping documentation in sync with your validation logic.
+
+```js
+const { example } = require('envguard');
+
+example({
+  DATABASE_URL: { type: 'url',    required: true,  description: 'PostgreSQL connection URL' },
+  PORT:         { type: 'port',   default: '3000', description: 'HTTP server port' },
+  JWT_SECRET:   { type: 'string', required: true,  minLength: 32, description: 'Secret for signing JWTs' },
+  DEBUG:        { type: 'boolean', default: 'false' },
+});
+```
+
+Output:
+```bash
+# Generated by envguard
+# https://www.npmjs.com/package/envguard
+
+# PostgreSQL connection URL
+# [required, type: url]
+DATABASE_URL=https://example.com
+
+# HTTP server port
+# [optional, default: 3000, type: port]
+PORT=3000
+
+# Secret for signing JWTs
+# [required]
+JWT_SECRET=your_value_here
+
+# [optional, default: false, type: boolean]
+DEBUG=false
+```
+
+To write it to a file:
+```bash
+node -e "const {example}=require('envguard'); example(require('./env.contract'))" > .env.example
+```
+
+---
+
+## Field Spec Reference
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | string | One of: `string`, `number`, `boolean`, `url`, `email`, `enum`, `json`, `port` |
+| `required` | boolean | Whether the variable is required (default: `true`) |
+| `default` | string | Default value if not set (use string representation: `'3000'`, `'false'`) |
+| `description` | string | Human-readable description (used in `.env.example` output) |
+| `example` | string | Example value for `.env.example` generation |
+| `minLength` | number | Minimum string length (strings only) |
+| `maxLength` | number | Maximum string length (strings only) |
+| `pattern` | RegExp \| string | Regex pattern the value must match (strings only) |
+| `min` | number | Minimum value (numbers only) |
+| `max` | number | Maximum value (numbers only) |
+| `values` | string[] | Allowed values (enum only) |
+| `validate` | function | Custom validator: `(value: string) => string \| null` |
+
+---
+
+## Type Coercion
+
+envguard coerces raw string environment variable values into proper types:
+
+| Type | Input | Output |
+|------|-------|--------|
+| `string` | `"hello"` | `"hello"` |
+| `number` | `"3000"` | `3000` |
+| `boolean` | `"true"`, `"1"`, `"yes"`, `"on"` | `true` |
+| `boolean` | `"false"`, `"0"`, `"no"`, `"off"` | `false` |
+| `port` | `"8080"` | `8080` |
+| `json` | `'{"key":"val"}'` | `{ key: "val" }` |
+| `url` | `"https://..."` | `"https://..."` (unchanged) |
+| `email` | `"user@..."` | `"user@..."` (unchanged) |
+| `enum` | `"production"` | `"production"` (unchanged) |
+
+---
+
+## TypeScript
+
+envguard ships with full TypeScript type definitions. Types are inferred from your contract at the call site — no casting needed.
+
+```typescript
+import { guard } from 'envguard';
+
+const config = guard({
+  PORT:     { type: 'port' as const,   default: '3000' },
+  NODE_ENV: { type: 'enum' as const,   values: ['dev', 'prod'] as const, default: 'dev' },
+  DEBUG:    { type: 'boolean' as const, default: 'false' },
+});
+
+config.PORT     // inferred as: number
+config.DEBUG    // inferred as: boolean
+config.NODE_ENV // inferred as: "dev" | "prod"
+```
+
+---
+
+## Why envguard?
+
+| Feature | envguard | envalid | dotenv-safe |
+|---------|----------|---------|-------------|
+| Zero dependencies | ✅ | ❌ | ❌ |
+| Type coercion | ✅ | ✅ | ❌ |
+| `.env.example` generator | ✅ | ❌ | ✅ (manual) |
+| Non-crashing audit mode | ✅ | ❌ | ❌ |
+| Custom validators | ✅ | ✅ | ❌ |
+| TypeScript types | ✅ | ✅ | ❌ |
+| Port type | ✅ | ❌ | ❌ |
+| JSON type | ✅ | ✅ | ❌ |
+
+---
+
+## License
+
+MIT © [AXIOM / Yonder Zenith LLC](https://github.com/yonderzenith)
+
+---
+
+*Built by [AXIOM](https://github.com/yonderzenith) — an autonomous AI agent experiment.*
+*Sponsor this work: [GitHub Sponsors](https://github.com/sponsors/yonderzenith)*
